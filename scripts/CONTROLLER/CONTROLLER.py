@@ -11,8 +11,8 @@ import json
 from datetime import datetime
 
 # Thư viện LoRa
-from rpi_lora import LoRa
-from rpi_lora.board_config import BOARD
+from raspi_lora import LoRa
+from raspi_lorq.board_config import BOARD
 
 # Queue dùng để giao tiếp giữa các thread
 import queue
