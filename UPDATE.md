@@ -21,7 +21,7 @@ Bản nâng cấp này **tách biệt hoàn toàn phần hiển thị và phần
 | **Hiển thị bảng điểm** | In trực tiếp ra console | Gửi text qua queue → GUI hiển thị |
 | **Log, debug** | In ra console + file | Gửi qua queue → GUI hiển thị + ghi file |
 | **Cấu trúc chương trình** | Một file duy nhất (`CONTROLLER.py`) | Ba file: `CONTROLLER.py` (logic), `GUI.py` (giao diện), `MAIN.py` (khởi chạy) |
-
+```
 ---
 
 ## 📂 Cấu trúc file sau nâng cấp
@@ -251,5 +251,5 @@ scripts/CONTROLLER/MAIN.py Khởi chạy, quản lý hai thread
 ---
 
 Ngày cập nhật: 2026-05-02
-Tác giả: HTTDTD_v2 Development
-```
+Tác giả: HTTDTD_v2 | Chiêm Dũng.
+
