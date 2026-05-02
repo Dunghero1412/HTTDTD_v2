@@ -29,9 +29,9 @@ Bản nâng cấp này **tách biệt hoàn toàn phần hiển thị và phần
 ```
 
 scripts/CONTROLLER/
-├── CONTROLLER.py   # Backend: LoRa, tính điểm, quản lý dữ liệu (chạy trong thread)
-├── GUI.py          # Frontend: PyQt6, hiển thị bảng điểm, log, nút bấm
-└── MAIN.py         # Khởi tạo queue, chạy hai thread (Controller + GUI)
+        ├── CONTROLLER.py   # Backend: LoRa, tính điểm, quản lý dữ liệu (chạy trong thread)
+        ├── GUI.py          # Frontend: PyQt6, hiển thị bảng điểm, log, nút bấm
+        └── MAIN.py         # Khởi tạo queue, chạy hai thread (Controller + GUI)
 
 ```
 
@@ -252,4 +252,4 @@ scripts/CONTROLLER/MAIN.py Khởi chạy, quản lý hai thread
 
 Ngày cập nhật: 2026-05-02
 Tác giả: HTTDTD_v2 Development
-
+```
