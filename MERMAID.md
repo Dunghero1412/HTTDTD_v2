@@ -179,7 +179,7 @@ flowchart TD
     SLEEP --> LOOP
     
     EXIT --> STOP([Dừng Controller])
-'''
+```
 
 ---
 
