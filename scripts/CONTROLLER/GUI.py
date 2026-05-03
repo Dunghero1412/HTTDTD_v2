@@ -1,161 +1,552 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-GUI cho Controller - PyQt6
-Hiển thị bảng điểm, log, các nút điều khiển.
-Giao tiếp với backend qua hai hàng đợi (cmd_queue, out_queue).
+GUI.py – Giao diện PyQt6 cho hệ thống điều khiển bắn đạn thật
+
+📌 VAI TRÒ TRONG HỆ THỐNG 3 FILE:
+    MAIN.py       → khởi động, quản lý thread
+    CONTROLLER.py → LoRa, tính điểm, JSON
+    GUI.py        → PyQt6 giao diện người dùng   ← FILE NÀY
+
+🖼️  BỐ CỤC GIAO DIỆN (3 vùng lớn):
+    ┌──────────────────────┬─────────────────────┐
+    │                      │  [LOG / DEBUG]      │
+    │   [BẢNG ĐIỂM]        │  (ô phải trên)      │
+    │   (ô trái – lớn nhất)│─────────────────────│
+    │                      │  [NÚT NODE 1–5]     │
+    │                      │  [NÚT A B C D EX]   │
+    └──────────────────────┴─────────────────────┘
+
+🔄 GIAO TIẾP VỚI CONTROLLER:
+    - Nhận object Controller từ MAIN.py qua __init__
+    - Poll log_queue mỗi 200ms (QTimer) → hiển thị lên ô log
+    - Nhận bảng điểm qua score_callback đã đăng ký trong MAIN.py
+    - Gọi controller.handle_button(name) khi nút được bấm
 """
 
-import sys
-import threading
-import queue
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget,
-                             QVBoxLayout, QHBoxLayout, QGridLayout,
-                             QPushButton, QTextEdit, QLabel, QSplitter)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+# ── PyQt6 ─────────────────────────────────────────────────────────────────────
+from PyQt6.QtWidgets import (
+    QMainWindow,       # cửa sổ chính của ứng dụng
+    QWidget,           # widget cơ bản (container)
+    QHBoxLayout,       # layout ngang
+    QVBoxLayout,       # layout dọc
+    QGridLayout,       # layout lưới (dùng cho hàng nút)
+    QTextEdit,         # ô văn bản nhiều dòng (bảng điểm + log)
+    QPushButton,       # nút bấm
+    QLabel,            # nhãn văn bản
+    QSplitter,         # thanh chia kéo được giữa 2 vùng
+    QFrame,            # khung viền
+)
+from PyQt6.QtCore import (
+    Qt,                # hằng số Qt (alignment, v.v.)
+    QTimer,            # bộ đếm thời gian cho polling
+    pyqtSignal,        # tín hiệu Qt (signal)
+    QObject,           # lớp cơ sở để dùng signal
+)
+from PyQt6.QtGui import (
+    QFont,             # font chữ
+    QColor,            # màu sắc
+    QPalette,          # bảng màu widget
+    QTextCursor,       # điều khiển con trỏ trong QTextEdit
+)
 
-class Communicate(QObject):
-    """Lớp trung gian để gửi tín hiệu từ luồng đọc queue vào GUI thread"""
-    update_log = pyqtSignal(str)
-    update_board = pyqtSignal(str)
+# ── Thư viện chuẩn ────────────────────────────────────────────────────────────
+import queue           # để đọc log_queue từ Controller
 
-class ControllerGUI(QMainWindow):
+# ==================== BRIDGE SIGNAL (thread-safe update GUI) ====================
+
+class SignalBridge(QObject):
     """
-    Cửa sổ chính với:
-    - Bảng điểm (QTextEdit) bên trái
-    - Khung log (QTextEdit) bên phải phía trên
-    - Hai hàng nút bấm bên phải phía dưới
+    Cầu nối thread-safe giữa Controller thread và GUI thread.
+
+    PyQt6 yêu cầu tất cả cập nhật UI phải xảy ra trong GUI thread.
+    Controller chạy trong thread riêng → không được gọi Qt widgets trực tiếp.
+    Giải pháp: Controller emit signal → Qt event loop nhận → GUI thread cập nhật.
+
+    Signals:
+        score_updated (str) : phát khi có dữ liệu bảng điểm mới
+        log_received  (str) : phát khi có dòng log mới (dự phòng, chủ yếu dùng QTimer poll)
     """
-    def __init__(self, cmd_queue, out_queue):
+    score_updated = pyqtSignal(str)   # tham số: string bảng điểm đã render
+    log_received  = pyqtSignal(str)   # tham số: dòng log đơn lẻ
+
+
+# ==================== CỬA SỔ CHÍNH ====================
+
+class MainWindow(QMainWindow):
+    """
+    Cửa sổ chính của ứng dụng điều khiển.
+
+    Nhận vào:
+        controller (Controller): object từ MAIN.py
+        bridge     (SignalBridge): cầu nối signal từ MAIN.py
+
+    Chức năng:
+        - Hiển thị bảng điểm (ô trái)
+        - Hiển thị log/debug (ô phải trên)
+        - 2 hàng nút bấm ảo (ô phải dưới)
+        - Poll log_queue mỗi 200ms
+    """
+
+    def __init__(self, controller, bridge):
+        """
+        Tham số:
+            controller (Controller): object điều khiển chính
+            bridge     (SignalBridge): signal bridge từ MAIN.py
+        """
         super().__init__()
-        self.cmd_queue = cmd_queue    # Hàng đợi gửi lệnh đến backend
-        self.out_queue = out_queue    # Hàng đợi nhận dữ liệu từ backend
-        self.comm = Communicate()
-        self.init_ui()
 
-        # Bắt đầu luồng đọc dữ liệu từ out_queue (từ backend)
-        self.reader_thread = threading.Thread(target=self._read_out_queue, daemon=True)
-        self.reader_thread.start()
+        # Lưu tham chiếu đến controller và bridge
+        self.controller = controller
+        self.bridge     = bridge
 
-        # Kết nối tín hiệu với các slot cập nhật giao diện
-        self.comm.update_log.connect(self.append_log)
-        self.comm.update_board.connect(self.set_board_text)
+        # ── Kết nối signal bảng điểm → slot cập nhật UI ───────────────────
+        # Khi Controller gọi score_callback → emit signal → _on_score_updated()
+        # được gọi trong GUI thread (an toàn)
+        self.bridge.score_updated.connect(self._on_score_updated)
 
-    def init_ui(self):
-        """Thiết lập giao diện"""
-        self.setWindowTitle("HTTDTD Controller - Bắn súng điện tử")
-        self.setGeometry(100, 100, 1200, 700)
+        # ── Cấu hình cửa sổ ───────────────────────────────────────────────
+        self.setWindowTitle("Hệ thống điều khiển bắn đạn thật – LoRa Controller")
+        self.setMinimumSize(1280, 720)    # kích thước tối thiểu
+        self.resize(1400, 800)            # kích thước mặc định
+
+        # ── Style sheet toàn cục ──────────────────────────────────────────
+        self._apply_stylesheet()
+
+        # ── Xây dựng giao diện ────────────────────────────────────────────
+        self._build_ui()
+
+        # ── QTimer poll log_queue (200ms) ─────────────────────────────────
+        # Không dùng signal cho log vì log rất nhiều → dùng timer gom lại
+        self._log_timer = QTimer(self)
+        self._log_timer.timeout.connect(self._poll_log_queue)
+        self._log_timer.start(200)   # 200ms = 5 lần/giây, đủ realtime
+
+        # Hiển thị bảng điểm rỗng ban đầu
+        self._on_score_updated(self.controller.get_score_table())
+
+    # ==================== STYLE ====================
+
+    def _apply_stylesheet(self):
+        """
+        Áp dụng stylesheet tối (dark theme) cho toàn bộ ứng dụng.
+        Màu sắc lấy cảm hứng từ màn hình quân sự: nền tối, chữ xanh lá.
+        """
+        self.setStyleSheet("""
+            /* ── Nền ứng dụng ──────────────────────────── */
+            QMainWindow, QWidget {
+                background-color: #0d1117;
+                color: #c9d1d9;
+                font-family: 'Courier New', 'Liberation Mono', monospace;
+            }
+
+            /* ── Ô văn bản (bảng điểm + log) ───────────── */
+            QTextEdit {
+                background-color: #0d1117;
+                color: #39ff14;
+                border: 1px solid #30363d;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                padding: 6px;
+                selection-background-color: #1f6feb;
+            }
+
+            /* ── Nhãn tiêu đề các ô ────────────────────── */
+            QLabel#section_title {
+                color: #58a6ff;
+                font-size: 11px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                padding: 4px 6px;
+                background-color: #161b22;
+                border-bottom: 1px solid #30363d;
+            }
+
+            /* ── Nút NODE 1–5 (hàng trên) ──────────────── */
+            QPushButton#node_btn {
+                background-color: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+                min-height: 48px;
+                min-width: 90px;
+            }
+            QPushButton#node_btn:hover {
+                background-color: #30363d;
+                border-color: #58a6ff;
+                color: #58a6ff;
+            }
+            QPushButton#node_btn[active="true"] {
+                background-color: #1f6feb;
+                border-color: #58a6ff;
+                color: #ffffff;
+            }
+
+            /* ── Nút nhóm A–D (hàng dưới) ──────────────── */
+            QPushButton#group_btn {
+                background-color: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+                min-height: 48px;
+                min-width: 90px;
+            }
+            QPushButton#group_btn:hover {
+                background-color: #30363d;
+                border-color: #3fb950;
+                color: #3fb950;
+            }
+            QPushButton#group_btn[active="true"] {
+                background-color: #238636;
+                border-color: #3fb950;
+                color: #ffffff;
+            }
+
+            /* ── Nút EXTRA (EX) ─────────────────────────── */
+            QPushButton#extra_btn {
+                background-color: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+                min-height: 48px;
+                min-width: 90px;
+            }
+            QPushButton#extra_btn:hover {
+                background-color: #30363d;
+                border-color: #f85149;
+                color: #f85149;
+            }
+            QPushButton#extra_btn[active="true"] {
+                background-color: #b91c1c;
+                border-color: #f85149;
+                color: #ffffff;
+            }
+
+            /* ── Splitter ───────────────────────────────── */
+            QSplitter::handle {
+                background-color: #30363d;
+                width: 3px;
+            }
+            QSplitter::handle:hover {
+                background-color: #58a6ff;
+            }
+
+            /* ── Khung viền section ─────────────────────── */
+            QFrame#section_frame {
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                background-color: #161b22;
+            }
+        """)
+
+    # ==================== XÂY DỰNG UI ====================
+
+    def _build_ui(self):
+        """
+        Xây dựng layout chính của cửa sổ.
+
+        Cấu trúc:
+            QSplitter (ngang)
+            ├── LEFT  : ô bảng điểm (chiếm ~55% width)
+            └── RIGHT : QVBoxLayout
+                        ├── ô log/debug (~55% height của right)
+                        └── ô nút bấm  (~45% height của right)
+        """
 
         # Widget trung tâm
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
 
-        # ===== Bên trái: Bảng điểm =====
-        self.board_text = QTextEdit()
-        self.board_text.setReadOnly(True)
-        self.board_text.setFontFamily("Monospace")
-        self.board_text.setFontPointSize(10)
+        # Layout gốc có padding 8px
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(8, 8, 8, 8)
+        root_layout.setSpacing(0)
 
-        # ===== Bên phải: gồm log (trên) và các nút (dưới) =====
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        # ── Splitter ngang chia trái/phải ─────────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
+        root_layout.addWidget(splitter)
 
-        # Khung log
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFontFamily("Monospace")
-        self.log_text.setFontPointSize(9)
-        right_splitter.addWidget(self.log_text)
+        # ── VÙng trái: BẢNG ĐIỂM ──────────────────────────────────────────
+        left_frame  = self._build_score_panel()
+        splitter.addWidget(left_frame)
 
-        # Khung chứa các nút bấm
-        button_widget = QWidget()
-        button_layout = QVBoxLayout(button_widget)
+        # ── Vùng phải: LOG + NÚT BẤM ──────────────────────────────────────
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(4, 0, 0, 0)
+        right_layout.setSpacing(6)
 
-        # Hàng 1: NODE1 -> NODE5
-        row1_layout = QHBoxLayout()
-        for i in range(1, 6):
-            btn = QPushButton(f"NODE{i}")
-            btn.clicked.connect(lambda checked, n=i: self._on_node_clicked(n))
-            row1_layout.addWidget(btn)
-        button_layout.addLayout(row1_layout)
+        # Ô log
+        log_frame = self._build_log_panel()
+        right_layout.addWidget(log_frame, stretch=55)   # 55% chiều cao
 
-        # Hàng 2: A, B, C, D, EXTRA
-        row2_layout = QHBoxLayout()
-        for label in ["A", "B", "C", "D", "EXTRA"]:
+        # Ô nút bấm
+        btn_frame = self._build_button_panel()
+        right_layout.addWidget(btn_frame, stretch=45)   # 45% chiều cao
+
+        splitter.addWidget(right_widget)
+
+        # Tỷ lệ trái:phải = 55:45
+        splitter.setSizes([770, 630])
+
+    # ── Ô bảng điểm (trái) ────────────────────────────────────────────────
+    def _build_score_panel(self):
+        """
+        Tạo panel bên trái: tiêu đề + QTextEdit chỉ đọc cho bảng điểm.
+        Font monospace để các cột căn thẳng hàng.
+        """
+        frame = QFrame()
+        frame.setObjectName("section_frame")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Tiêu đề ô
+        title = QLabel("◉  BẢNG ĐIỂM")
+        title.setObjectName("section_title")
+        layout.addWidget(title)
+
+        # QTextEdit hiển thị bảng điểm – read-only
+        self.score_display = QTextEdit()
+        self.score_display.setReadOnly(True)    # chỉ đọc, không chỉnh sửa
+        self.score_display.setObjectName("score_display")
+        # Font monospace lớn hơn cho dễ đọc
+        self.score_display.setFont(QFont("Courier New", 13))
+
+        layout.addWidget(self.score_display)
+        return frame
+
+    # ── Ô log/debug (phải trên) ───────────────────────────────────────────
+    def _build_log_panel(self):
+        """
+        Tạo panel log bên phải phía trên: tiêu đề + QTextEdit append-only.
+        Tự động scroll xuống cuối khi có dòng log mới.
+        """
+        frame = QFrame()
+        frame.setObjectName("section_frame")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Tiêu đề ô
+        title = QLabel("◉  LOG / DEBUG / THÔNG TIN NODE")
+        title.setObjectName("section_title")
+        layout.addWidget(title)
+
+        # QTextEdit hiển thị log – read-only, append từ dưới lên
+        self.log_display = QTextEdit()
+        self.log_display.setReadOnly(True)
+        self.log_display.setObjectName("log_display")
+        self.log_display.setFont(QFont("Courier New", 11))
+
+        layout.addWidget(self.log_display)
+        return frame
+
+    # ── Ô nút bấm (phải dưới) ─────────────────────────────────────────────
+    def _build_button_panel(self):
+        """
+        Tạo panel nút bấm với 2 hàng:
+            Hàng 1: NODE 1 | NODE 2 | NODE 3 | NODE 4 | NODE 5
+            Hàng 2: A      | B      | C      | D      | EX
+
+        Mỗi nút là QPushButton có toggle state, màu thay đổi khi bấm.
+        """
+        frame = QFrame()
+        frame.setObjectName("section_frame")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(8, 4, 8, 8)
+        layout.setSpacing(6)
+
+        # Tiêu đề ô
+        title = QLabel("◉  ĐIỀU KHIỂN")
+        title.setObjectName("section_title")
+        layout.addWidget(title)
+
+        # Grid layout cho 2 hàng nút
+        grid = QGridLayout()
+        grid.setSpacing(8)        # khoảng cách giữa các nút
+        layout.addLayout(grid)
+        layout.addStretch()       # đẩy nút lên trên, không bị giãn xuống
+
+        # ── Hàng 1: NODE 1 → 5 ────────────────────────────────────────────
+        # Dict lưu tham chiếu đến các QPushButton để toggle màu sau
+        self.node_buttons = {}
+
+        node_defs = [
+            ("NODE 1", "NODE1"),
+            ("NODE 2", "NODE2"),
+            ("NODE 3", "NODE3"),
+            ("NODE 4", "NODE4"),
+            ("NODE 5", "NODE5"),
+        ]
+
+        for col, (label, key) in enumerate(node_defs):
             btn = QPushButton(label)
-            btn.clicked.connect(lambda checked, lbl=label: self._on_group_clicked(lbl))
-            row2_layout.addWidget(btn)
-        button_layout.addLayout(row2_layout)
+            btn.setObjectName("node_btn")
+            btn.setCheckable(False)   # toggle được quản lý thủ công qua controller
+            # Lambda capture 'key' đúng (tránh closure bug trong vòng lặp)
+            btn.clicked.connect(lambda checked, k=key: self._on_button_clicked(k))
+            grid.addWidget(btn, 0, col)   # hàng 0, cột col
+            self.node_buttons[key] = btn
 
-        # Hàng phụ: nút Reset Round (xoá dữ liệu vòng hiện tại)
-        reset_btn = QPushButton("RESET ROUND (MISS PAD)")
-        reset_btn.clicked.connect(self._on_reset_round)
-        button_layout.addWidget(reset_btn)
+        # ── Hàng 2: A, B, C, D, EX ───────────────────────────────────────
+        self.group_buttons = {}
 
-        right_splitter.addWidget(button_widget)
+        group_defs = [
+            ("A",    "A",     "group_btn"),
+            ("B",    "B",     "group_btn"),
+            ("C",    "C",     "group_btn"),
+            ("D",    "D",     "group_btn"),
+            ("EX",   "EXTRA", "extra_btn"),   # nút EXTRA màu đỏ khi active
+        ]
 
-        # Tỷ lệ chiều cao log : nút = 2:1
-        right_splitter.setStretchFactor(0, 2)
-        right_splitter.setStretchFactor(1, 1)
+        for col, (label, key, obj_name) in enumerate(group_defs):
+            btn = QPushButton(label)
+            btn.setObjectName(obj_name)
+            btn.clicked.connect(lambda checked, k=key: self._on_button_clicked(k))
+            grid.addWidget(btn, 1, col)   # hàng 1, cột col
+            self.group_buttons[key] = btn
 
-        # Ghép hai khu vực chính
-        main_layout.addWidget(self.board_text, stretch=3)
-        main_layout.addWidget(right_splitter, stretch=2)
+        # Giãn đều các cột
+        for col in range(5):
+            grid.setColumnStretch(col, 1)
 
-        # Hiển thị thông báo khởi động
-        self.append_log("[GUI] Controller GUI started. Waiting for backend...")
+        return frame
 
-    def _read_out_queue(self):
-        """Luồng đọc dữ liệu từ out_queue và phát tín hiệu cập nhật giao diện"""
-        while True:
+    # ==================== XỬ LÝ SỰ KIỆN ====================
+
+    def _on_button_clicked(self, btn_name):
+        """
+        Xử lý khi người dùng bấm một nút trên GUI.
+
+        Luồng:
+            1. Gọi controller.handle_button(btn_name) → gửi lệnh LoRa
+            2. Đọc lại button_states từ controller
+            3. Cập nhật visual (màu nút) theo trạng thái mới
+            4. Nếu EXTRA mode bật → tô đỏ toàn bộ nút còn lại (locked)
+
+        Tham số:
+            btn_name (str): "NODE1"…"NODE5", "A","B","C","D","EXTRA"
+        """
+        # Gọi controller xử lý logic (gửi LoRa, cập nhật state)
+        self.controller.handle_button(btn_name)
+
+        # Refresh màu tất cả nút theo trạng thái mới từ controller
+        self._refresh_button_styles()
+
+    def _refresh_button_styles(self):
+        """
+        Cập nhật màu sắc tất cả nút bấm theo trạng thái hiện tại
+        trong controller.button_states và controller.extra_mode_active.
+
+        Cơ chế:
+            - Nút đang UP (active=True)  → nền xanh (node) hoặc xanh lá (group)
+            - Nút đang DOWN (active=False) → nền tối mặc định
+            - EXTRA đang bật → tất cả nút bị khóa hiển thị màu mờ
+            - Nút EXTRA đang bật → nền đỏ
+        """
+        states       = self.controller.button_states
+        extra_active = self.controller.extra_mode_active
+
+        # ── Cập nhật nút NODE 1–5 ────────────────────────────────────────
+        for key, btn in self.node_buttons.items():
+            is_active = states.get(key, False)
+            is_locked = extra_active  # bị khoá khi EXTRA mode bật
+
+            # Dùng Qt property để stylesheet selector [active="true"] hoạt động
+            btn.setProperty("active", "true" if is_active else "false")
+
+            # Khi bị khoá → giảm opacity bằng cách override style
+            if is_locked and not is_active:
+                btn.setStyleSheet("opacity: 0.4;")
+            else:
+                btn.setStyleSheet("")   # dùng lại stylesheet gốc
+
+            # Bắt buộc Qt repaint lại widget sau khi đổi property
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+        # ── Cập nhật nút nhóm A–D và EX ──────────────────────────────────
+        for key, btn in self.group_buttons.items():
+            is_active = states.get(key, False)
+            is_locked = extra_active and (key != "EXTRA")
+
+            btn.setProperty("active", "true" if is_active else "false")
+
+            if is_locked:
+                btn.setStyleSheet("opacity: 0.4;")
+            else:
+                btn.setStyleSheet("")
+
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+    # ── Nhận bảng điểm mới từ signal ──────────────────────────────────────
+    def _on_score_updated(self, score_text):
+        """
+        Slot nhận signal score_updated từ SignalBridge.
+        Cập nhật nội dung ô bảng điểm bên trái.
+        Chạy trong GUI thread → an toàn.
+
+        Tham số:
+            score_text (str): bảng điểm đã render từ get_score_table()
+        """
+        self.score_display.setPlainText(score_text)
+        # Di chuyển con trỏ về đầu để hiển thị từ đầu bảng
+        cursor = self.score_display.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.score_display.setTextCursor(cursor)
+
+    # ── Poll log queue ─────────────────────────────────────────────────────
+    def _poll_log_queue(self):
+        """
+        Gọi bởi QTimer mỗi 200ms.
+        Đọc tất cả message trong log_queue của controller và append vào ô log.
+        Giới hạn 50 dòng/lần poll để tránh lag UI.
+
+        Cơ chế scroll: luôn cuộn xuống cuối sau khi append.
+        """
+        max_per_poll = 50   # tránh UI lag khi log burst nhiều
+        count = 0
+
+        while count < max_per_poll:
             try:
-                # Chờ tối đa 0.1s để không block
-                data = self.out_queue.get(timeout=0.1)
-                if data[0] == 'log':
-                    self.comm.update_log.emit(data[1])
-                elif data[0] == 'board':
-                    self.comm.update_board.emit(data[1])
+                # Lấy 1 message từ queue (không blocking)
+                msg = self.controller.log_queue.get_nowait()
+                # Append vào cuối ô log
+                self.log_display.append(msg)
+                count += 1
             except queue.Empty:
-                pass
-            except Exception as e:
-                print(f"Reader thread error: {e}")
+                break   # hết message trong queue
 
-    def append_log(self, text):
-        """Thêm dòng log vào khung log (chạy trong GUI thread)"""
-        self.log_text.append(text)
-        # Tự động cuộn xuống cuối
-        scrollbar = self.log_text.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        # Cuộn xuống cuối nếu có message mới
+        if count > 0:
+            scrollbar = self.log_display.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
 
-    def set_board_text(self, text):
-        """Cập nhật bảng điểm (chạy trong GUI thread)"""
-        self.board_text.setPlainText(text)
-
-    def _on_node_clicked(self, node_number):
-        """Xử lý khi nhấn nút NODE1..NODE5: gửi lệnh UP/DOWN"""
-        # Gửi lệnh dạng NODE1 UP nếu node chưa active? Ở backend cần quản lý trạng thái.
-        # Giả định mỗi lần nhấn là toggle UP/DOWN. Để đơn giản, gửi UP rồi lần sau DOWN?
-        # Thực tế backend sẽ xử lý, ta gửi lệnh với node name.
-        node_name = f"NODE{node_number}"
-        self.cmd_queue.put({'type': 'send', 'node': node_name, 'command': 'UP'})
-        # Lưu ý: backend không tự động gửi DOWN, nên cần quản lý trạng thái ở đây hoặc backend.
-        # Để demo, ta cho phép gửi UP mỗi lần bấm. Bạn có thể cải tiến thêm.
-
-    def _on_group_clicked(self, label):
-        """Xử lý nút A, B, C, D, EXTRA"""
-        # Với A, B, EXTRA, gửi lệnh trực tiếp
-        # C, D có thể gửi tương tự hoặc để dành mở rộng
-        if label in ['A', 'B', 'C', 'D', 'EXTRA']:
-            self.cmd_queue.put({'type': 'send', 'node': label, 'command': 'UP'})
-        else:
-            self.append_log(f"[WARN] Unknown group: {label}")
-
-    def _on_reset_round(self):
-        """Reset vòng bắn: pad miss và xoá shots"""
-        self.cmd_queue.put({'type': 'reset_round'})
-        self.append_log("[GUI] Reset round requested")
-
+    # ── Xử lý đóng cửa sổ ────────────────────────────────────────────────
     def closeEvent(self, event):
-        """Đóng cửa sổ: gửi lệnh thoát cho backend"""
-        self.cmd_queue.put({'type': 'exit'})
+        """
+        Override sự kiện đóng cửa sổ (X button hoặc Alt+F4).
+        Dừng QTimer trước khi đóng để tránh callback sau khi widget bị destroy.
+        Gọi controller.stop() để dừng LoRa an toàn.
+
+        Tham số:
+            event (QCloseEvent): sự kiện đóng cửa sổ từ Qt
+        """
+        # Dừng timer poll log để tránh truy cập widget đã bị destroy
+        self._log_timer.stop()
+
+        # Dừng vòng lặp controller và đóng LoRa
+        self.controller.stop()
+
+        # Chấp nhận sự kiện đóng → cửa sổ thực sự đóng
         event.accept()
