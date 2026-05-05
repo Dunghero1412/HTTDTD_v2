@@ -1,0 +1,3 @@
+[submodule "scripts/sx1302_hal"]
+	path = scripts/sx1302_hal
+	url = https://github.com/Dunghero1412/sx1302_hal_HTTDTD
