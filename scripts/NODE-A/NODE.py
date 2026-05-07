@@ -101,15 +101,21 @@ LORA_CR = 5   # 4/5 = cr=5 trong rpi_lora
 # ==================== CẤU HÌNH CHUNG ====================
 
 # GPIO pins
+#GPIO17 dùng để nhận tín hiệu DATA_READY từ STM32 (PB0) báo có dữ liệu SPI mới
 DATA_READY_PIN = 17    # input: STM32 PB0 báo có dữ liệu SPI
+#GPIO20 chỉ dùng để điều khiển relay bật tắt motor khi nhận lệnh UP/DOWN từ Controller 
 CONTROL_PIN    = 20    # output: điều khiển motor/relay
 
 # LoRa
+# Tần số hoạt động – phải khớp với SX1303 gateway
 LORA_FREQ = 915        # MHz – phải khớp với SX1303 gateway
 
 # SPI cho STM32
+# SPI_BUS và SPI_DEVICE có thể thay đổi tuỳ theo cách kết nối. Thông thường:
 SPI_BUS    = 0
+# SPI_DEVICE = 0 tương ứng với /dev/spidev0.0 trên RPi, dùng CE0 làm CS cho STM32
 SPI_DEVICE = 0
+# SPI_SPEED: phải khớp với cấu hình STM32 (SPI2 @ 42MHz / 4 = 10.5 MHz)
 SPI_SPEED  = 10500000  # 10.5 MHz (STM32 SPI2 @ 42MHz / 4)
 
 # Tọa độ 4 cảm biến piezo trên bia (cm), tâm bia = (0,0)
@@ -125,29 +131,50 @@ CONTROL_TIMEOUT          = 60     # giây – timeout sau lệnh UP
 SENSOR_DETECTION_WINDOW  = 0.05   # giây (legacy, giữ cho reference)
 
 # STM32 TIM2 clock
+# STM32 TIM2 chạy ở 84 MHz (APB1 × 2, PSC=0) → mỗi tick ~11.905 ns
+# TICK_TO_SECONDS dùng để chuyển đổi ticks → giây, sau đó nhân với sound_speed để ra cm
+# Quan trọng: nếu thay đổi cấu hình STM32 (PSC, APB1), phải cập nhật lại STM32_CLK_FREQ và TICK_TO_SECONDS cho đúng.
+# Ví dụ: nếu PSC=1 → TIM2 chạy ở 42 MHz → STM32_CLK_FREQ=42e6, TICK_TO_SECONDS=1/42e6
+# Việc này đảm bảo tính chính xác của phép đo thời gian và vị trí viên đạn.
 STM32_CLK_FREQ  = 84e6            # 84 MHz (APB1 × 2, PSC=0)
 TICK_TO_SECONDS = 1.0 / STM32_CLK_FREQ  # ~11.905 ns/tick
 
 # BME280
+#bme280_sensor = None  # biến toàn cục để lưu instance BME280, khởi tạo trong setup()
+#Địa chỉ I2C mặc định của BME280 là 0x76 hoặc 0x77 tuỳ theo cách nối dây. Phải khớp với phần cứng.
 BME280_I2C_ADDR      = 0x76
+#Cập nhật tốc độ âm thanh từ BME280 mỗi 60 giây để đảm bảo độ chính xác khi nhiệt độ thay đổi.
 BME280_UPDATE_INTERVAL = 60       # giây
 
 # Hybrid triangulation
+# BƯỚC 1: Weighted Average – nhanh, cho kết quả gần đúng, dùng để khởi đầu cho bước 2
+# BƯỚC 2: Hyperbolic Refinement – chậm hơn, tinh chỉnh chính xác, dùng kết quả bước 1 làm điểm khởi đầu
+# Các tham số này có thể điều chỉnh để cân bằng giữa tốc độ và độ chính xác của phép đo.
+# Ví dụ: tăng WEIGHTED_AVG_ITERATIONS hoặc giảm WEIGHTED_AVG_LEARNING_RATE có thể cải thiện độ chính xác của bước 1 nhưng tốn thời gian hơn. Tăng HYPERBOLIC_MAX_ITERATIONS hoặc giảm HYPERBOLIC_TOLERANCE có thể cải thiện độ chính xác của bước 2 nhưng cũng tốn thời gian hơn.
+# Trong thực tế, với SF6–SF10 và khoảng cách bia ~1m, các tham số hiện tại đã được thử nghiệm để đạt độ chính xác tốt trong vòng vài trăm ms, phù hợp với yêu cầu của bài bắn.
 WEIGHTED_AVG_ITERATIONS    = 10
 WEIGHTED_AVG_LEARNING_RATE = 0.15
+# Hyperbolic refinement có thể tắt nếu muốn chỉ dùng Weighted Average (nhanh hơn nhưng ít chính xác hơn)
 ENABLE_HYPERBOLIC          = True
+# Các tham số tối đa cho hyperbolic refinement – có thể điều chỉnh để cân bằng giữa độ chính xác và thời gian tính toán
 HYPERBOLIC_MAX_ITERATIONS  = 100
+# HYPERBOLIC_TOLERANCE: ngưỡng dừng khi thay đổi tọa độ quá nhỏ (cm) – có thể điều chỉnh để cân bằng giữa độ chính xác và thời gian tính toán
 HYPERBOLIC_TOLERANCE       = 1e-6
 
 # Log
+# LOG_FILE: đường dẫn file log để ghi lại kết quả và lỗi. Có thể thay đổi nếu muốn lưu ở nơi khác hoặc tên khác.
 LOG_FILE = "/opt/score.txt"
 
 # ==================== TỐC ĐỘ ÂM THANH ====================
-
+"""Tính toán tốc độ âm thanh dựa trên nhiệt độ từ BME280.
+Công thức: c = 331.3 * sqrt(1 + T/273.15) (m/s)
+Nhiệt độ càng cao → tốc độ âm thanh càng nhanh → khoảng cách tính từ Δt càng lớn → vị trí viên đạn càng xa.
+Việc cập nhật tốc độ âm thanh động từ BME280 giúp cải thiện độ chính xác của phép đo,  đặc biệt khi nhiệt độ thay đổi đáng kể (ví dụ: từ 15°C đến 35°C, tốc độ âm thanh thay đổi khoảng 10 m/s)."""
 def calc_sound_speed(temp_celsius: float) -> float:
     """Tính vận tốc âm thanh (m/s) theo nhiệt độ Celsius."""
     return 331.3 * math.sqrt(1.0 + temp_celsius / 273.15)
 
+# Khi khởi tạo, nếu BME280 lỗi, sẽ dùng giá trị mặc định 340 m/s (tương đương khoảng 20°C) để tránh crash. Sau đó nếu BME280 hoạt động lại được, sẽ cập nhật tốc độ âm thanh chính xác.
 SOUND_SPEED_DEFAULT = 340.0        # m/s (fallback khi BME280 lỗi)
 sound_speed = SOUND_SPEED_DEFAULT  # biến động, cập nhật từ BME280
 TICK_TO_CM  = sound_speed * 100 * TICK_TO_SECONDS  # cm/tick

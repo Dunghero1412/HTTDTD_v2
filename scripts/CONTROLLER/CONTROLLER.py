@@ -39,6 +39,7 @@ import queue
 import socket
 import struct
 import base64
+import random
 from datetime import datetime
 
 # ==================== CẤU HÌNH CHUNG ====================
