@@ -39,7 +39,7 @@ import time                      # delay, timeout, timestamp
 import sys                       # sys.exit()
 import math                      # sqrt(), trig
 import spidev                    # giao tiếp SPI với STM32
-from rpi_lora import LoRa        # LoRa SX1276 transceiver
+from raspi_lora import LoRa        # LoRa SX1276 transceiver
 from rpi_lora.board_config import BOARD  # pin mapping bo mạch
 from datetime import datetime    # timestamp log
 import numpy as np               # tính toán ma trận (hyperbolic)
@@ -50,6 +50,7 @@ import board
 import busio
 import adafruit_bme280.advanced as adafruit_bme280
 import threading                 # thread cập nhật BME280 định kỳ
+from subprocess import check_output, CalledProcessError  # kiểm tra I2C devices
 
 # ==================== CẤU HÌNH NODE ====================
 
@@ -59,6 +60,10 @@ import threading                 # thread cập nhật BME280 định kỳ
 # NODE_ROW = 2 → NODE 2 → dùng SF7
 # ... v.v.
 NODE_ROW = 1   # ← THAY ĐỔI GIÁ TRỊ NÀY CHO TỪNG NODE (1–5)
+
+subnet = "A"  # subnet của node này (A/B/C/D), dùng để phân biệt nhóm bia
+subsf = "SF6" # SF tương ứng với node A (để log rõ ràng, không bắt buộc)
+
 
 # ✓ Hậu tố nhóm bia: "A", "B", "C" hoặc "D"
 # Mỗi RPi trong một hàng thuộc về nhóm bia khác nhau
@@ -220,9 +225,11 @@ def setup():
     print(f"[INIT] SPI ready tại {SPI_SPEED / 1e6:.1f} MHz (Mode 0)")
 
     # ── LoRa SX1276 ───────────────────────────────────────────────────────
+    # Khởi tạo LoRa với pin mapping mặc định từ rpi_lora.board_config.BOARD
     lora = LoRa(BOARD.CN1, BOARD.CN1)
 
     # Tần số – phải khớp với SX1303 gateway
+    # Quan trọng: phải gọi set_frequency() trước khi set_spreading_factor() để đảm bảo SX1276 được cấu hình đúng tần số và SF hoạt động ổn định.
     lora.set_frequency(LORA_FREQ)
 
     # ✦ MỚI: Spreading Factor riêng theo hàng node ─────────────────────────

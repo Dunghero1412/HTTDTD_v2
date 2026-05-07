@@ -39,7 +39,6 @@ import queue
 import socket
 import struct
 import base64
-import random
 from datetime import datetime
 
 # ==================== CẤU HÌNH CHUNG ====================
@@ -54,6 +53,9 @@ LORA_FREQUENCY = 915.0
 
 # Bandwidth (kHz) – phải khớp tất cả node và gateway config
 LORA_BW = 125
+
+# Số viên bắn tối đa mỗi node
+MAX_SHOTS_PER_NODE = 3
 
 # ✦ Mapping hàng node → Spreading Factor
 # Phải khớp với NODE_SF_MAP trong NODE.py
@@ -78,14 +80,15 @@ def _get_sf_for_node(node_name: str) -> int:
     Trả về SF mặc định (SF7) nếu không parse được.
     """
     try:
-        # Lấy số sau "NODE": "NODE1A" → "1"
-        row = int(node_name[4])   # ký tự thứ 4 (index 4) là số hàng
+        # Extract tất cả digits từ node_name: "NODE1A" → "1", "NODE10C" → "10"
+        digits = ''.join(c for c in node_name if c.isdigit())
+        row = int(digits)
         return NODE_ROW_SF_MAP.get(row, 7)   # mặc định SF7
-    except (IndexError, ValueError):
+    except (ValueError, AttributeError):
         return 7   # fallback an toàn
 
 # File log
-LOG_FILE  = "score.txt"
+LOG_FILE  = "/opt/score.txt"
 JSON_FILE = "/opt/score.json"
 
 # Timeout điều khiển
@@ -392,7 +395,9 @@ class Controller:
                 return raw_str   # trả về chuỗi đầu tiên nhận được
 
         except socket.timeout:
-            return None   # bình thường – không có gói trong 0.5s
+            # Timeout bình thường – không có gói trong 0.5s
+            # Debug: pass đễ dễ set breakpoint nếu cần troubleshoot
+            return None
         except (json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
             self._log(f"[WARN] Parse UDP packet: {e}")
             return None
@@ -503,7 +508,7 @@ class ScoreDisplay:
             "score": result['score'],
             "ring_name": result['ring_name'],
         })
-        if len(self.scores[node_key]["shots"]) < 3:
+        if len(self.scores[node_key]["shots"]) < MAX_SHOTS_PER_NODE:
             self.scores[node_key]["shots"].append({
                 'x': x, 'y': y,
                 'score': result['score'],
@@ -566,7 +571,7 @@ class ScoreDisplay:
 
     def reset_round(self):
         for node_key in self.scores:
-            while len(self.scores[node_key]["shots"]) < 3:
+            while len(self.scores[node_key]["shots"]) < MAX_SHOTS_PER_NODE:
                 self.scores[node_key]["shots"].append(
                     {'x': None, 'y': None, 'score': 0,
                      'ring': 'Miss', 'distance': None})
