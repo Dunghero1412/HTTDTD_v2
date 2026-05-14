@@ -31,15 +31,15 @@ CONTROLLER.py – Lõi điều khiển (SX1303 gateway qua UDP)
     Controller gửi downlink với SF tương ứng → SX1303 route đúng node.
 """
 
-import time
-import sys
-import math
-import json
-import queue
-import socket
-import struct
-import base64
-from datetime import datetime
+import time                   # giữ nguyên để sleep trong vòng lặp, không dùng cho LoRa timing nữa
+import sys                    # giữ nguyên để sys.exit() khi cần thiết
+import math                   # giữ nguyên để tính toán điểm dựa trên tọa độ (x, y)
+import json                   # giữ nguyên để lưu điểm vào file JSON theo cấu trúc đã định sẵn
+import queue                  # giữ nguyên để tạo log_queue thread-safe giữa Controller và GUI
+import socket                 # thêm để giao tiếp UDP với Semtech packet forwarder (lora_pkt_fwd)
+import struct                 # thêm để đóng gói header UDP theo chuẩn Semtech (version, token, identifier)
+import base64                 # thêm để encode payload thành base64 theo chuẩn Semtech UDP downlink
+from datetime import datetime # giữ nguyên để timestamp log và JSON
 
 # ==================== CẤU HÌNH CHUNG ====================
 

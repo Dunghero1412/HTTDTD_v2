@@ -306,13 +306,20 @@ def setup_node(node_name_input, flash_stm32_type=0):
         log_message(f"Copy NODE.py từ NODE-{node_group}/ → {node_dst}")
         with open(node_src, 'r') as f:
             content = f.read()
-        old_pattern = 'NODE_NAME = "NODE1A"'
-        new_pattern = f'NODE_NAME = "{node_full_name}"'
-        if old_pattern not in content:
-            log_message(f"Không tìm thấy '{old_pattern}' trong file", "WARNING")
+        row_pattern = 'NODE_ROW = "1"'  # mặc định là NODE_ROW = "1"
+        suffix_pattern = 'NODE_SUFFIX = "A"'  # mặc định là NODE_SUFFIX = "A"
+        row_replacement = f'NODE_ROW = "{node_number}"'
+        suffix_replacement = f'NODE_SUFFIX = "{node_group}"'
+        if row_pattern in content:
+            content = content.replace(row_pattern, row_replacement)
+            log_message(f"Sửa NODE_ROW → {row_replacement}", "SUCCESS")
         else:
-            content = content.replace(old_pattern, new_pattern)
-            log_message(f"Sửa NODE_NAME → {node_full_name}", "SUCCESS")
+            log_message(f"Không tìm thấy '{row_pattern}' trong file", "WARNING")
+        if suffix_pattern in content:
+            content = content.replace(suffix_pattern, suffix_replacement)
+            log_message(f"Sửa NODE_SUFFIX → {suffix_replacement}", "SUCCESS")
+        else:
+            log_message(f"Không tìm thấy '{suffix_pattern}' trong file", "WARNING")
         with open(node_dst, 'w') as f:
             f.write(content)
         os.chmod(node_dst, 0o755)
