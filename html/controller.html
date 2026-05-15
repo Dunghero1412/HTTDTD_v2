@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BALLISTIC SCORING SYSTEM</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --bg:        #070a0e;
+  --panel:     #0b0f15;
+  --border:    #1c2a1c;
+  --green:     #00ff88;
+  --green2:    #00cc66;
+  --green3:    #004422;
+  --red:       #ff3344;
+  --amber:     #ffaa00;
+  --blue:      #00aaff;
+  --dim:       #1a2a1a;
+  --text:      #6a9a6a;
+  --text2:     #4a6a4a;
+  --white:     #e8f0e8;
+  --mono:      'Share Tech Mono', monospace;
+  --title:     'Orbitron', sans-serif;
+  --body:      'Rajdhani', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--white);
+  font-family: var(--body);
+  overflow: hidden;
+}
+
+/* ── SCANLINE + GRAIN ────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg, transparent, transparent 3px,
+      rgba(0,255,136,0.012) 3px, rgba(0,255,136,0.012) 4px
+    );
+  pointer-events: none;
+  z-index: 9998;
+}
+
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 256px;
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 9997;
+}
+
+/* ── HEADER ──────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, #0b0f15 0%, #0d1a0d 50%, #0b0f15 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--green2), transparent);
+  animation: hline 3s ease-in-out infinite;
+}
+@keyframes hline {
+  0%,100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo {
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: var(--green);
+  text-shadow: 0 0 20px rgba(0,255,136,0.5);
+}
+
+.header-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 3px 8px;
+  border: 1px solid;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+
+.badge-green { border-color: var(--green2); color: var(--green2); }
+.badge-amber { border-color: var(--amber);  color: var(--amber); }
+.badge-red   { border-color: var(--red);    color: var(--red); }
+
+.blink { animation: blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+#clock {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--green);
+  letter-spacing: 2px;
+}
+
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
+.conn-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  transition: background 0.3s;
+  box-shadow: 0 0 6px var(--red);
+}
+.conn-dot.connected {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+/* ── MAIN LAYOUT ─────────────────────────────────── */
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  grid-template-rows: 1fr 200px;
+  height: calc(100vh - 52px);
+  gap: 0;
+}
+
+/* ── SECTION WRAPPER ─────────────────────────────── */
+.section {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,255,136,0.03);
+  flex-shrink: 0;
+}
+
+.section-title {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+/* ── TARGET GRID (trung tâm) ─────────────────────── */
+#target-section {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.target-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  flex: 1;
+  overflow: hidden;
+  gap: 1px;
+  background: var(--border);
+  padding: 1px;
+}
+
+.target-cell {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.target-label {
+  position: absolute;
+  top: 8px; left: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--text2);
+}
+
+.target-score-badge {
+  position: absolute;
+  top: 8px; right: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--amber);
+  letter-spacing: 1px;
+}
+
+/* ── SVG TARGET ──────────────────────────────────── */
+.target-svg {
+  width: 100%;
+  height: 100%;
+  max-width: 300px;
+  max-height: 300px;
+}
+
+/* Rings */
+.ring { fill: none; stroke-width: 0.8; }
+.ring-10 { stroke: rgba(0,255,136,0.7); fill: rgba(0,255,136,0.06); }
+.ring-9  { stroke: rgba(0,255,136,0.55); }
+.ring-8  { stroke: rgba(0,255,136,0.45); }
+.ring-7  { stroke: rgba(0,255,136,0.38); }
+.ring-6  { stroke: rgba(0,255,136,0.32); }
+.ring-5  { stroke: rgba(0,255,136,0.27); }
+.ring-4  { stroke: rgba(0,255,136,0.22); }
+.ring-3  { stroke: rgba(0,255,136,0.18); }
+.ring-2  { stroke: rgba(0,255,136,0.14); }
+.ring-1  { stroke: rgba(0,255,136,0.10); }
+
+.crosshair { stroke: rgba(0,255,136,0.2); stroke-width: 0.5; }
+.bia-border { fill: none; stroke: rgba(0,255,136,0.15); stroke-width: 0.8; }
+
+/* Hit dots */
+.hit-dot {
+  r: 4;
+  fill: var(--red);
+  stroke: #ff8888;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 4px var(--red));
+  transition: all 0.3s;
+}
+.hit-dot.new {
+  animation: hitFlash 0.8s ease-out;
+}
+@keyframes hitFlash {
+  0%   { r: 12; opacity: 1; fill: #fff; }
+  100% { r: 4;  opacity: 1; fill: var(--red); }
+}
+
+.hit-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  fill: var(--amber);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* ── SCOREBOARD (phải trên) ──────────────────────── */
+#score-section {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.scoreboard {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.score-row-group {
+  margin-bottom: 2px;
+}
+
+.score-group-title {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text2);
+  padding: 6px 12px 3px;
+  text-transform: uppercase;
+}
+
+.score-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 1fr 1fr 44px;
+  align-items: center;
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(28,42,28,0.4);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.2s;
+  gap: 4px;
+}
+.score-row:hover {
+  background: rgba(0,255,136,0.03);
+}
+
+.score-node {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--green2);
+  letter-spacing: 1px;
+}
+
+.score-shot {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: center;
+  color: var(--text);
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+.score-shot.hit {
+  color: var(--green);
+  border-color: var(--green3);
+  background: rgba(0,255,136,0.05);
+}
+.score-shot.miss {
+  color: var(--red);
+  border-color: rgba(255,51,68,0.2);
+}
+
+.score-total {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  color: var(--amber);
+}
+
+/* Scrollbar */
+.scoreboard::-webkit-scrollbar { width: 3px; }
+.scoreboard::-webkit-scrollbar-track { background: var(--panel); }
+.scoreboard::-webkit-scrollbar-thumb { background: var(--dim); }
+
+/* ── LOG (dưới trái) ─────────────────────────────── */
+#log-section {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.log-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+.log-line { display: flex; gap: 8px; }
+.log-time  { color: var(--text2); flex-shrink: 0; }
+.log-msg   { color: var(--text); }
+.log-msg.ok    { color: var(--green2); }
+.log-msg.warn  { color: var(--amber); }
+.log-msg.err   { color: var(--red); }
+.log-msg.data  { color: var(--blue); }
+
+.log-body::-webkit-scrollbar { width: 3px; }
+.log-body::-webkit-scrollbar-track { background: var(--panel); }
+.log-body::-webkit-scrollbar-thumb { background: var(--dim); }
+
+/* ── STATS (dưới phải) ───────────────────────────── */
+#stats-section {
+  grid-column: 2;
+  grid-row: 2;
+  border-right: none;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px;
+  flex: 1;
+}
+
+.stat-card {
+  background: rgba(0,255,136,0.03);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--text2);
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-family: var(--title);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1;
+}
+
+.stat-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text2);
+}
+
+/* ── TOTAL BAR ───────────────────────────────────── */
+.total-bar {
+  padding: 10px 12px 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.total-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text2);
+}
+
+.total-value {
+  font-family: var(--title);
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--amber);
+  text-shadow: 0 0 20px rgba(255,170,0,0.4);
+}
+
+/* ── ACTIVE NODE INDICATOR ───────────────────────── */
+.active-node-bar {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.node-pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text2);
+  transition: all 0.3s;
+}
+.node-pill.active {
+  border-color: var(--green2);
+  color: var(--green);
+  background: rgba(0,255,136,0.08);
+  box-shadow: 0 0 8px rgba(0,255,136,0.2);
+}
+
+/* ── ALERT OVERLAY ───────────────────────────────── */
+.alert-overlay {
+  position: fixed;
+  bottom: 60px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.alert-toast {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 8px 14px;
+  border: 1px solid var(--green2);
+  background: rgba(0,20,10,0.95);
+  color: var(--green);
+  letter-spacing: 1px;
+  animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+  border-radius: 2px;
+}
+@keyframes toastIn  { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+@keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────── -->
+<header>
+  <div class="header-left">
+    <div class="logo">BSS-V3</div>
+    <div class="header-badges">
+      <span class="badge badge-green">BALLISTIC SCORING</span>
+      <span class="badge badge-amber blink" id="statusBadge">● STANDBY</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="active-node-bar" id="activeNodes">
+      <span class="node-pill" data-node="1">N1</span>
+      <span class="node-pill" data-node="2">N2</span>
+      <span class="node-pill" data-node="3">N3</span>
+      <span class="node-pill" data-node="4">N4</span>
+      <span class="node-pill" data-node="5">N5</span>
+    </div>
+    <div class="conn-status">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connLabel">OFFLINE</span>
+    </div>
+    <div id="clock">--:--:--</div>
+  </div>
+</header>
+
+<!-- ── WORKSPACE ───────────────────────────────────── -->
+<div class="workspace">
+
+  <!-- ── TARGET DISPLAY ────────────────────────────── -->
+  <div class="section" id="target-section">
+    <div class="section-header">
+      <span class="section-title">◈ virtual target display</span>
+      <div style="display:flex;gap:8px">
+        <span class="badge badge-green" style="font-size:8px">REALTIME</span>
+        <button onclick="clearAllHits()"
+          style="font-family:var(--mono);font-size:8px;letter-spacing:1px;
+                 background:none;border:1px solid var(--border);color:var(--text2);
+                 padding:2px 8px;cursor:pointer;border-radius:2px">
+          CLEAR
+        </button>
+      </div>
+    </div>
+
+    <div class="target-grid" id="targetGrid">
+      <!-- NODE A – Vòng tròn chuẩn, tâm (0,0) -->
+      <div class="target-cell" id="cell-A">
+        <span class="target-label">NODE ·A· DÃYA</span>
+        <span class="target-score-badge" id="badge-A">0đ</span>
+        <svg class="target-svg" viewBox="-55 -55 110 110" id="svg-A">
+          <rect x="-50" y="-50" width="100" height="100" class="bia-border"/>
+          <line x1="-50" y1="0" x2="50" y2="0" class="crosshair"/>
+          <line x1="0" y1="-50" x2="0" y2="50" class="crosshair"/>
+          <!-- Rings: bán kính 7.5 đến 75cm, scale: 1cm=1px trong viewBox -->
+          <circle cx="0" cy="0" r="7.5"  class="ring ring-10"/>
+          <circle cx="0" cy="0" r="15"   class="ring ring-9"/>
+          <circle cx="0" cy="0" r="22.5" class="ring ring-8"/>
+          <circle cx="0" cy="0" r="30"   class="ring ring-7"/>
+          <circle cx="0" cy="0" r="37.5" class="ring ring-6"/>
+          <circle cx="0" cy="0" r="45"   class="ring ring-5"/>
+          <!-- Ring labels -->
+          <text x="1" y="-8.5"  font-family="Share Tech Mono" font-size="4" fill="rgba(0,255,136,0.5)" text-anchor="middle">10</text>
+          <text x="1" y="-16"   font-family="Share Tech Mono" font-size="3.5" fill="rgba(0,255,136,0.4)" text-anchor="middle">9</text>
+          <text x="1" y="-23.5" font-family="Share Tech Mono" font-size="3.5" fill="rgba(0,255,136,0.35)" text-anchor="middle">8</text>
+          <text x="1" y="-31"   font-family="Share Tech Mono" font-size="3.5" fill="rgba(0,255,136,0.3)" text-anchor="middle">7</text>
+          <text x="1" y="-38.5" font-family="Share Tech Mono" font-size="3.5" fill="rgba(0,255,136,0.25)" text-anchor="middle">6</text>
+          <text x="1" y="-46"   font-family="Share Tech Mono" font-size="3.5" fill="rgba(0,255,136,0.2)" text-anchor="middle">5</text>
+          <g id="hits-A"></g>
+        </svg>
+      </div>
+
+      <!-- NODE B – Vòng tròn, tâm lệch (0,+25) -->
+      <div class="target-cell" id="cell-B">
+        <span class="target-label">NODE ·B· DÃYB</span>
+        <span class="target-score-badge" id="badge-B">0đ</span>
+        <svg class="target-svg" viewBox="-55 -55 110 110" id="svg-B">
+          <rect x="-50" y="-50" width="100" height="100" class="bia-border"/>
+          <line x1="-50" y1="0" x2="50" y2="0" class="crosshair"/>
+          <line x1="0" y1="-50" x2="0" y2="50" class="crosshair"/>
+          <!-- Tâm vòng tại (0, -25) trong SVG (Y đảo ngược) -->
+          <circle cx="0" cy="-25" r="7.5"  class="ring ring-10"/>
+          <circle cx="0" cy="-25" r="15"   class="ring ring-9"/>
+          <circle cx="0" cy="-25" r="22.5" class="ring ring-8"/>
+          <circle cx="0" cy="-25" r="30"   class="ring ring-7"/>
+          <circle cx="0" cy="-25" r="37.5" class="ring ring-6"/>
+          <circle cx="0" cy="-25" r="45"   class="ring ring-5"/>
+          <!-- Silhouette body hint -->
+          <ellipse cx="0" cy="-25" rx="12" ry="16" fill="none" stroke="rgba(0,255,136,0.08)" stroke-width="0.5" stroke-dasharray="2,2"/>
+          <text x="1" y="-33.5"  font-family="Share Tech Mono" font-size="4" fill="rgba(0,255,136,0.5)" text-anchor="middle">10</text>
+          <g id="hits-B"></g>
+        </svg>
+      </div>
+
+      <!-- NODE C – Vòng tròn, tâm lệch (0,+25) -->
+      <div class="target-cell" id="cell-C">
+        <span class="target-label">NODE ·C· DÃYC</span>
+        <span class="target-score-badge" id="badge-C">0đ</span>
+        <svg class="target-svg" viewBox="-55 -55 110 110" id="svg-C">
+          <rect x="-50" y="-50" width="100" height="100" class="bia-border"/>
+          <line x1="-50" y1="0" x2="50" y2="0" class="crosshair"/>
+          <line x1="0" y1="-50" x2="0" y2="50" class="crosshair"/>
+          <circle cx="0" cy="-25" r="7.5"  class="ring ring-10"/>
+          <circle cx="0" cy="-25" r="15"   class="ring ring-9"/>
+          <circle cx="0" cy="-25" r="22.5" class="ring ring-8"/>
+          <circle cx="0" cy="-25" r="30"   class="ring ring-7"/>
+          <circle cx="0" cy="-25" r="37.5" class="ring ring-6"/>
+          <circle cx="0" cy="-25" r="45"   class="ring ring-5"/>
+          <ellipse cx="0" cy="-25" rx="12" ry="16" fill="none" stroke="rgba(0,255,136,0.08)" stroke-width="0.5" stroke-dasharray="2,2"/>
+          <text x="1" y="-33.5"  font-family="Share Tech Mono" font-size="4" fill="rgba(0,255,136,0.5)" text-anchor="middle">10</text>
+          <g id="hits-C"></g>
+        </svg>
+      </div>
+
+      <!-- NODE D – Vòng tròn chuẩn, tâm (0,0) -->
+      <div class="target-cell" id="cell-D">
+        <span class="target-label">NODE ·D· DÃYD</span>
+        <span class="target-score-badge" id="badge-D">0đ</span>
+        <svg class="target-svg" viewBox="-55 -55 110 110" id="svg-D">
+          <rect x="-50" y="-50" width="100" height="100" class="bia-border"/>
+          <line x1="-50" y1="0" x2="50" y2="0" class="crosshair"/>
+          <line x1="0" y1="-50" x2="0" y2="50" class="crosshair"/>
+          <circle cx="0" cy="0" r="7.5"  class="ring ring-10"/>
+          <circle cx="0" cy="0" r="15"   class="ring ring-9"/>
+          <circle cx="0" cy="0" r="22.5" class="ring ring-8"/>
+          <circle cx="0" cy="0" r="30"   class="ring ring-7"/>
+          <circle cx="0" cy="0" r="37.5" class="ring ring-6"/>
+          <circle cx="0" cy="0" r="45"   class="ring ring-5"/>
+          <text x="1" y="-8.5"  font-family="Share Tech Mono" font-size="4" fill="rgba(0,255,136,0.5)" text-anchor="middle">10</text>
+          <g id="hits-D"></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SCOREBOARD ─────────────────────────────────── -->
+  <div class="section" id="score-section">
+    <div class="section-header">
+      <span class="section-title">◈ scoreboard</span>
+      <span class="badge badge-green" style="font-size:8px" id="roundBadge">ROUND 1</span>
+    </div>
+
+    <div class="scoreboard" id="scoreboard">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="total-bar">
+      <span class="total-label">TỔNG ĐIỂM</span>
+      <span class="total-value" id="grandTotal">0</span>
+    </div>
+  </div>
+
+  <!-- ── LOG ───────────────────────────────────────── -->
+  <div class="section" id="log-section">
+    <div class="section-header">
+      <span class="section-title">◈ system log</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge badge-green blink" id="rxIndicator" style="display:none">RX</span>
+        <button onclick="clearLog()"
+          style="font-family:var(--mono);font-size:8px;letter-spacing:1px;
+                 background:none;border:1px solid var(--border);color:var(--text2);
+                 padding:2px 8px;cursor:pointer;border-radius:2px">
+          CLR
+        </button>
+      </div>
+    </div>
+    <div class="log-body" id="logBody"></div>
+  </div>
+
+  <!-- ── STATS ─────────────────────────────────────── -->
+  <div class="section" id="stats-section">
+    <div class="section-header">
+      <span class="section-title">◈ statistics</span>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Viên đã bắn</span>
+        <span class="stat-value" id="statShots">0</span>
+        <span class="stat-sub">/ 15 tối đa</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Trúng bia</span>
+        <span class="stat-value" id="statHits">0</span>
+        <span class="stat-sub" id="statHitPct">–%</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Điểm cao nhất</span>
+        <span class="stat-value" id="statBest">—</span>
+        <span class="stat-sub" id="statBestNode">–</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Trung bình</span>
+        <span class="stat-value" id="statAvg">—</span>
+        <span class="stat-sub">điểm/viên</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ALERT OVERLAY ──────────────────────────────── -->
+<div class="alert-overlay" id="alertOverlay"></div>
+
+<script>
+// ==================== CẤU HÌNH ====================
+
+const WS_URL      = 'ws://localhost:8765';   // ← đổi thành IP controller nếu cần
+const RECONNECT_MS = 3000;
+
+// Tâm vòng theo suffix (cm, hệ toạ độ thực)
+const CENTER_OFFSET = { A: 0, B: 25, C: 25, D: 0 };
+
+// Cấu hình vòng điểm
+const RINGS = [
+  [7.5,10],[15,9],[22.5,8],[30,7],[37.5,6],
+  [45,5],[52.5,4],[60,3],[67.5,2],[75,1]
+];
+
+// ==================== STATE ====================
+
+const state = {
+  scores: {},    // { "NODE1A": [{x,y,score,ring}, ...], ... }
+  ws: null,
+  connected: false,
+  totalShots: 0,
+  totalHits:  0,
+};
+
+// Khởi tạo scores
+['A','B','C','D'].forEach(s => {
+  for(let i=1; i<=5; i++) state.scores[`NODE${i}${s}`] = [];
+});
+
+// ==================== WEBSOCKET ====================
+
+function connectWS() {
+  addLog('Kết nối WebSocket...', 'warn');
+  try {
+    state.ws = new WebSocket(WS_URL);
+
+    state.ws.onopen = () => {
+      state.connected = true;
+      document.getElementById('connDot').classList.add('connected');
+      document.getElementById('connLabel').textContent = 'ONLINE';
+      document.getElementById('statusBadge').textContent = '● ACTIVE';
+      document.getElementById('statusBadge').style.borderColor = 'var(--green2)';
+      document.getElementById('statusBadge').style.color = 'var(--green2)';
+      addLog('WebSocket kết nối thành công', 'ok');
+      showToast('● CONNECTED');
+    };
+
+    state.ws.onmessage = (evt) => {
+      flashRX();
+      try {
+        const msg = JSON.parse(evt.data);
+        handleMessage(msg);
+      } catch(e) {
+        addLog(`Parse error: ${evt.data}`, 'err');
+      }
+    };
+
+    state.ws.onclose = () => {
+      state.connected = false;
+      document.getElementById('connDot').classList.remove('connected');
+      document.getElementById('connLabel').textContent = 'OFFLINE';
+      addLog('WebSocket ngắt kết nối – thử lại sau 3s', 'err');
+      setTimeout(connectWS, RECONNECT_MS);
+    };
+
+    state.ws.onerror = () => {
+      addLog('WebSocket lỗi', 'err');
+    };
+
+  } catch(e) {
+    addLog(`Không thể kết nối: ${e}`, 'err');
+    setTimeout(connectWS, RECONNECT_MS);
+  }
+}
+
+// ==================== XỬ LÝ MESSAGE ====================
+
+function handleMessage(msg) {
+  /*
+   * Định dạng message từ server (CONTROLLER):
+   *
+   * { type: "hit", node: "NODE1A", x: 28.0, y: 17.0,
+   *   score: 7, ring: "Vòng 7", confidence: "high" }
+   *
+   * { type: "log", text: "...", level: "ok"|"warn"|"err" }
+   *
+   * { type: "node_active", node_row: 1, active: true }
+   *
+   * { type: "clear" }
+   */
+
+  switch(msg.type) {
+
+    case 'hit':
+      processHit(msg);
+      break;
+
+    case 'log':
+      addLog(msg.text, msg.level || 'ok');
+      break;
+
+    case 'node_active':
+      setNodeActive(msg.node_row, msg.active);
+      break;
+
+    case 'clear':
+      clearAllHits();
+      break;
+
+    case 'state':
+      // Full state sync khi reconnect
+      if(msg.scores) {
+        Object.entries(msg.scores).forEach(([node, shots]) => {
+          shots.forEach(s => processHit({node, ...s}, false));
+        });
+        updateAll();
+      }
+      break;
+  }
+}
+
+function processHit(msg, animate=true) {
+  const { node, x, y, score, ring, confidence } = msg;
+  const suffix = node[5];   // NODE1A → A
+
+  if(!state.scores[node]) state.scores[node] = [];
+  if(state.scores[node].length >= 3) return;
+
+  state.scores[node].push({ x, y, score: score||0, ring: ring||'—' });
+  state.totalShots++;
+  if((score||0) > 0) state.totalHits++;
+
+  // Vẽ hit lên SVG
+  drawHit(suffix, x, y, score||0, state.scores[node].length, animate);
+
+  // Log
+  const conf = confidence === 'low' ? ' ⚠' : '';
+  addLog(`${node}: (${x.toFixed(1)}, ${y.toFixed(1)})cm → ${ring||'Miss'} [${score||0}đ]${conf}`, 'data');
+
+  if(animate && score > 7) showToast(`★ ${node}: ${ring} – ${score}đ`);
+
+  updateAll();
+}
+
+// ==================== VẼ HIT TRÊN SVG ====================
+
+function drawHit(suffix, x, y, score, shotNum, animate) {
+  const g = document.getElementById(`hits-${suffix}`);
+  if(!g) return;
+
+  const offY = CENTER_OFFSET[suffix] || 0;
+
+  // Chuyển cm → SVG coords (Y đảo ngược, tâm = gốc SVG)
+  const svgX = x;
+  const svgY = -(y);   // Y đảo chiều
+
+  // Tạo nhóm hit
+  const hitG = document.createElementNS('http://www.w3.org/2000/svg','g');
+
+  // Dot
+  const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  dot.setAttribute('cx', svgX);
+  dot.setAttribute('cy', svgY);
+  dot.setAttribute('r', '3.5');
+  dot.setAttribute('class', `hit-dot${animate?' new':''}`);
+
+  // Màu theo điểm
+  if(score >= 9)      { dot.setAttribute('fill','#00ff88'); dot.setAttribute('stroke','#88ffcc'); dot.style.filter='drop-shadow(0 0 5px #00ff88)'; }
+  else if(score >= 7) { dot.setAttribute('fill','#ffaa00'); dot.setAttribute('stroke','#ffcc66'); dot.style.filter='drop-shadow(0 0 4px #ffaa00)'; }
+  else if(score > 0)  { dot.setAttribute('fill','#ff3344'); dot.setAttribute('stroke','#ff8888'); }
+  else                { dot.setAttribute('fill','#444'); dot.setAttribute('stroke','#666'); dot.style.filter='none'; }
+
+  // Label số viên
+  const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+  lbl.setAttribute('x', svgX + 5);
+  lbl.setAttribute('y', svgY - 4);
+  lbl.setAttribute('class','hit-label');
+  lbl.textContent = `${shotNum}`;
+
+  hitG.appendChild(dot);
+  hitG.appendChild(lbl);
+  g.appendChild(hitG);
+
+  // Cập nhật badge tổng điểm
+  const nodeKey = `NODE${getNodeRow(suffix)}${suffix}`;
+  const total   = state.scores[nodeKey]?.reduce((s,h)=>s+h.score,0)||0;
+  const badge   = document.getElementById(`badge-${suffix}`);
+  if(badge) badge.textContent = `${total}đ`;
+}
+
+function getNodeRow(suffix) {
+  // Trả về row active đầu tiên của suffix đó
+  for(let i=1; i<=5; i++) {
+    if((state.scores[`NODE${i}${suffix}`]?.length||0) > 0) return i;
+  }
+  return 1;
+}
+
+// ==================== SCOREBOARD ====================
+
+function buildScoreboard() {
+  const sb = document.getElementById('scoreboard');
+  sb.innerHTML = '';
+
+  ['A','B','C','D'].forEach(suffix => {
+    const grp = document.createElement('div');
+    grp.className = 'score-row-group';
+
+    const title = document.createElement('div');
+    title.className = 'score-group-title';
+    title.textContent = `── DÃY ${suffix}`;
+    grp.appendChild(title);
+
+    for(let i=1; i<=5; i++) {
+      const key   = `NODE${i}${suffix}`;
+      const shots = state.scores[key] || [];
+      const total = shots.reduce((s,h)=>s+h.score, 0);
+
+      const row = document.createElement('div');
+      row.className = 'score-row';
+      row.id = `row-${key}`;
+
+      const fmt = idx => {
+        if(idx >= shots.length) return '<span class="score-shot">—</span>';
+        const s = shots[idx];
+        if(!s.score) return `<span class="score-shot miss">Miss</span>`;
+        return `<span class="score-shot hit">${s.score}đ</span>`;
+      };
+
+      row.innerHTML = `
+        <span class="score-node">${key}</span>
+        ${fmt(0)}${fmt(1)}${fmt(2)}
+        <span class="score-total">${total||'—'}</span>
+      `;
+      grp.appendChild(row);
+    }
+
+    sb.appendChild(grp);
+  });
+}
+
+// ==================== STATISTICS ====================
+
+function updateStats() {
+  const allShots = Object.values(state.scores).flat();
+  const shots    = allShots.length;
+  const hits     = allShots.filter(s=>s.score>0).length;
+  const scores   = allShots.filter(s=>s.score>0).map(s=>s.score);
+
+  document.getElementById('statShots').textContent = shots;
+  document.getElementById('statHits').textContent  = hits;
+  document.getElementById('statHitPct').textContent =
+    shots > 0 ? `${Math.round(hits/shots*100)}% trúng` : '–%';
+
+  if(scores.length > 0) {
+    const best = Math.max(...scores);
+    const avg  = (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1);
+    document.getElementById('statBest').textContent = best;
+    document.getElementById('statAvg').textContent  = avg;
+
+    // Tìm node có điểm cao nhất
+    let bestNode = '';
+    Object.entries(state.scores).forEach(([k,v]) => {
+      if(v.some(s=>s.score===best)) bestNode = k;
+    });
+    document.getElementById('statBestNode').textContent = bestNode;
+  }
+
+  // Grand total
+  const grand = allShots.reduce((s,h)=>s+h.score, 0);
+  document.getElementById('grandTotal').textContent = grand;
+}
+
+function updateAll() {
+  buildScoreboard();
+  updateStats();
+}
+
+// ==================== NODE ACTIVE INDICATOR ====================
+
+function setNodeActive(row, active) {
+  const pill = document.querySelector(`[data-node="${row}"]`);
+  if(pill) {
+    if(active) pill.classList.add('active');
+    else       pill.classList.remove('active');
+  }
+}
+
+// ==================== CLEAR ====================
+
+function clearAllHits() {
+  ['A','B','C','D'].forEach(suffix => {
+    const g = document.getElementById(`hits-${suffix}`);
+    if(g) g.innerHTML = '';
+    const badge = document.getElementById(`badge-${suffix}`);
+    if(badge) badge.textContent = '0đ';
+  });
+  Object.keys(state.scores).forEach(k => state.scores[k] = []);
+  state.totalShots = 0;
+  state.totalHits  = 0;
+  updateAll();
+  addLog('Đã xoá tất cả dữ liệu', 'warn');
+}
+
+// ==================== LOG ====================
+
+function addLog(text, type='ok') {
+  const body = document.getElementById('logBody');
+  const now  = new Date().toTimeString().slice(0,8);
+
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML =
+    `<span class="log-time">${now}</span>` +
+    `<span class="log-msg ${type}">${text}</span>`;
+
+  body.appendChild(line);
+
+  // Giới hạn 200 dòng
+  while(body.children.length > 200) body.removeChild(body.firstChild);
+  body.scrollTop = body.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logBody').innerHTML = '';
+}
+
+// ==================== RX FLASH ====================
+
+function flashRX() {
+  const rx = document.getElementById('rxIndicator');
+  rx.style.display = 'inline';
+  clearTimeout(rx._t);
+  rx._t = setTimeout(() => rx.style.display = 'none', 400);
+}
+
+// ==================== TOAST ====================
+
+function showToast(msg) {
+  const overlay = document.getElementById('alertOverlay');
+  const toast   = document.createElement('div');
+  toast.className = 'alert-toast';
+  toast.textContent = msg;
+  overlay.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ==================== CLOCK ====================
+
+function updateClock() {
+  document.getElementById('clock').textContent =
+    new Date().toTimeString().slice(0,8);
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ==================== DEMO MODE (khi không có WS) ====================
+
+function startDemo() {
+  addLog('DEMO MODE – không có kết nối WebSocket', 'warn');
+  addLog('Dữ liệu thử nghiệm tự động từ EXAMPLE.md', 'ok');
+
+  const demos = [
+    { node:'NODE1A', x: 28.0, y: 17.0, score:7, ring:'Vòng 7', confidence:'high' },
+    { node:'NODE2A', x:-15.0, y: 8.0,  score:9, ring:'Vòng 9', confidence:'high' },
+    { node:'NODE3A', x: 5.0,  y:-20.0, score:8, ring:'Vòng 8', confidence:'high' },
+    { node:'NODE1B', x: 8.0,  y: 30.0, score:7, ring:'Vòng 7', confidence:'high' },
+    { node:'NODE2B', x:-5.0,  y: 22.0, score:9, ring:'Vòng 9', confidence:'high' },
+    { node:'NODE3B', x: 3.0,  y: 26.0, score:8, ring:'Vòng 8', confidence:'low'  },
+    { node:'NODE1C', x:-10.0, y: 28.0, score:6, ring:'Vòng 6', confidence:'high' },
+    { node:'NODE2C', x: 2.0,  y: 25.0, score:10,ring:'Bullseye',confidence:'high'},
+    { node:'NODE3D', x: 35.0, y:-30.0, score:5, ring:'Vòng 5', confidence:'high' },
+  ];
+
+  let i = 0;
+  const interval = setInterval(() => {
+    if(i >= demos.length) { clearInterval(interval); return; }
+    handleMessage({ type: 'hit', ...demos[i++] });
+    setNodeActive(Math.ceil(Math.random()*5), true);
+  }, 1200);
+}
+
+// ==================== INIT ====================
+
+// Build scoreboard ban đầu
+buildScoreboard();
+addLog('Ballistic Scoring System v3.0 khởi động', 'ok');
+addLog(`WebSocket endpoint: ${WS_URL}`, 'warn');
+
+// Thử kết nối WS, nếu không được thì demo sau 2s
+connectWS();
+setTimeout(() => {
+  if(!state.connected) startDemo();
+}, 2000);
+</script>
+</body>
+</html>
