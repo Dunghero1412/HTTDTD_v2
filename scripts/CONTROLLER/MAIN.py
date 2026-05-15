@@ -41,6 +41,8 @@ import subprocess
 import time
 import os
 
+from ws_server import get_ws_server
+
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from CONTROLLER import Controller
 from GUI        import MainWindow, SignalBridge
@@ -197,12 +199,18 @@ def main():
     # ── 2. Tạo Controller + SignalBridge ───────────────────────────────────
     controller = Controller()
     bridge     = SignalBridge()
+    ws = get_ws_server()
+    ws.start()
+
 
     # ── 3. Đăng ký score callback ──────────────────────────────────────────
     # Controller emit signal khi có điểm mới → GUI thread cập nhật an toàn
     controller.set_score_callback(
-        lambda score_text: bridge.score_updated.emit(score_text)
-    )
+    lambda text: [
+        bridge.score_updated.emit(text),
+        # ws_server tự nhận hit qua broadcast_hit()
+    ]
+)
 
     # ── 4. Tạo QApplication ────────────────────────────────────────────────
     app = QApplication(sys.argv)
